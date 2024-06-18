@@ -1,4 +1,9 @@
 #include "systemcalls.h"
+#include <sys/types.h>
+#include <unistd.h>
+#include <stdlib.h>
+#include <fcntl.h>
+#include <sys/wait.h>
 
 /**
  * @param cmd the command to execute with system()
@@ -16,8 +21,14 @@ bool do_system(const char *cmd)
  *   and return a boolean true if the system() call completed with success
  *   or false() if it returned a failure
 */
+    // This if statement will NOT execute if and only if the return value of system(cmd) is a 0
+    if (system(cmd))
+    {
+        return false;
+    }
 
-    return true;
+    return true; // This indicates that the call to system returns a 0.
+
 }
 
 /**
@@ -49,19 +60,37 @@ bool do_exec(int count, ...)
     // and may be removed
     command[count] = command[count];
 
-/*
- * TODO:
- *   Execute a system command by calling fork, execv(),
- *   and wait instead of system (see LSP page 161).
- *   Use the command[0] as the full path to the command to execute
- *   (first argument to execv), and use the remaining arguments
- *   as second argument to the execv() command.
- *
-*/
+    pid_t pid;
+    int status;
+    fflush(stdout);
 
-    va_end(args);
 
-    return true;
+    pid = fork ();
+    if (pid == -1){
+      perror ("fork");
+      return false;
+    }
+    /* the child ... */
+    if (!pid) {
+      // const char *args[] = { "windlass", NULL };
+      int ret;
+      ret = execv (command[0], command);
+      if (ret == -1) {
+        // Returning false if the execv command does not transfer to the called process successfully
+        return false;
+      }
+    }
+
+  // Wait for the child process to terminate and catch the PID of the child using waitpid() call
+    if(waitpid(pid, &status, 0) == -1){
+      perror ("wait");
+      return false;
+    }
+
+
+        va_end(args);
+
+        return true;
 }
 
 /**
@@ -84,16 +113,67 @@ bool do_exec_redirect(const char *outputfile, int count, ...)
     // and may be removed
     command[count] = command[count];
 
+    pid_t pid;
+    int status;
+    int fd;
 
-/*
- * TODO
- *   Call execv, but first using https://stackoverflow.com/a/13784315/1446624 as a refernce,
- *   redirect standard out to a file specified by outputfile.
- *   The rest of the behaviour is same as do_exec()
- *
-*/
+    fd = open(outputfile, O_WRONLY|O_TRUNC|O_CREAT, 0644);
+    if (fd < 0) { // failed to open file
+      return false;
+    }
+
+
+    fflush(stdout);
+    pid = fork();
+    if (pid == -1) {
+        close(fd);
+        va_end(args);
+        perror ("fork");
+        return false;
+    }
+
+    if (pid == 0)
+    {
+        if (dup2(fd, 1) < 0)
+        {
+            exit(-1); // duplicating file descriptor failed
+        }
+        close(fd);
+        execv(command[0], command);
+        exit(-1);
+    }
+
+    close(fd);
+
+    // Wait for the child process to terminate and catch the PID of the child using waitpid() call
+    if(waitpid(pid, &status, 0) == -1){
+      perror ("wait");
+    }
+
+
+    if (waitpid(pid, &status, 0) == -1)
+    {
+        va_end(args);
+        return false;
+    }
+
+    if (!WIFEXITED(status))
+    {
+        va_end(args);
+        return false;
+    }
+
+    if (WEXITSTATUS(status))
+    {
+        va_end(args);
+        return false;
+    }
 
     va_end(args);
+    return true; // successful system call
 
-    return true;
+
+        va_end(args);
+
+        return true;
 }
