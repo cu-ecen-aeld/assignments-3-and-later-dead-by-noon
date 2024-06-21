@@ -58,39 +58,67 @@ bool do_exec(int count, ...)
     command[count] = NULL;
     // this line is to avoid a compile warning before your implementation is complete
     // and may be removed
-    command[count] = command[count];
+    // command[count] = command[count];
 
-    pid_t pid;
+/*
+ * TODO:
+ *   Execute a system command by calling fork, execv(),
+ *   and wait instead of system (see LSP page 161).
+ *   Use the command[0] as the full path to the command to execute
+ *   (first argument to execv), and use the remaining arguments
+ *   as second argument to the execv() command.
+ *
+*/
     int status;
+    pid_t pid;
+
     fflush(stdout);
-
-
-    pid = fork ();
-    if (pid == -1){
-      perror ("fork");
-      return false;
-    }
-    /* the child ... */
-    if (!pid) {
-      // const char *args[] = { "windlass", NULL };
-      int ret;
-      ret = execv (command[0], command);
-      if (ret == -1) {
-        // Returning false if the execv command does not transfer to the called process successfully
-        return false;
-      }
-    }
-
-  // Wait for the child process to terminate and catch the PID of the child using waitpid() call
-    if(waitpid(pid, &status, 0) == -1){
-      perror ("wait");
-      return false;
-    }
-
-
+    pid = fork(); // when this is called, a second instruction pointer is
+    // spawned that starts executing code in this function starting from the call to fork()
+    // onward. the first instruction pointer continues as well, but
+    // with one variable different: the return value of fork(). In the
+    // parent process, pid will be the process id the OS assigned to the child
+    // process, and in the child process, pid will be zero.
+    if (pid == -1)
+    {
         va_end(args);
+        return false; // failed to fork process
+    }
 
-        return true;
+    if (pid == 0) // the child process enters this codepath
+    {
+        execv(command[0], command); // child process replaces itself with the
+        // program at the full path in command[0] and passes the remaining
+        // strings in the command array to the program as arguments and
+        // stops when it reaches the null pointer at command[count]
+        // NOTE: the 1st element of the command array is automatically
+        // skipped when the 2nd argument is parsed! Docs don't mention that.
+        exit(-1); // the child process failed to replace itself with the callee
+    }
+
+    if (waitpid(pid, &status, 0) == -1) // parent process continues to this point,
+    // then waitpid() blocks execution until the OS process with the process id
+    // of the child process. if it returns -1, there was an error waiting for the process.
+    {
+        va_end(args);
+        return false;
+    }
+
+    if (!WIFEXITED(status)) // the child process crashed or was killed
+    {
+        va_end(args);
+        return false;
+    }
+
+    if (WEXITSTATUS(status)) // the child process exited with nonzero return value
+    {
+        va_end(args);
+        return false;
+    }
+
+    va_end(args);
+
+    return true; // successful system call
 }
 
 /**
